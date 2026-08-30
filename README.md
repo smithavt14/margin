@@ -98,7 +98,8 @@ suggestion card. A document waiting on the agent shows a neutral dot, and a sett
 nothing. The **inbox** tab lists those open items across the whole folder, grouped by document, and
 clicking one opens that document at the anchored text. Your agent sees the same folder from its side:
 `sidecar wait --dir <folder>` is one process over every document in it, so nothing sits unwatched
-while you read.
+while you read. `sidecar watchers` lists what is armed and whether each one is still running, with
+`--clean` to clear the records of watchers that died with the session that started them.
 
 **Edit.** The rendered document *is* the editor.
 - **Type-to-format:** `#`/`##`/`###` + space for headings, `-`/`1.` for lists, `>` for a quote, ` ``` `

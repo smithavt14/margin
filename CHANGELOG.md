@@ -3,6 +3,29 @@
 All notable changes to sidecar. Versions follow [semver](https://semver.org); dates are the day the
 version was tagged.
 
+## Unreleased
+
+**`sidecar watchers` says what is armed and whether it is still running.** A `wait` is a long-lived
+process holding the turn, and until now half of them left no trace: a folder wait wrote a lock, and a
+per-document one wrote nothing at all, so a backgrounded watcher that died with its harness was
+invisible. The verb lists every wait on the machine with its document or folder, its agent, its pid,
+and how long it has been blocking. Three states, because only one of them is safe to clear: **live**
+is beating, **quiet** is running and has missed three heartbeats (suspended or wedged, and left
+alone), and **stale** is a record that outlived its process. `--clean` reaps the stale ones and
+reports each by name; it never touches a live watcher. `--kill <pid>` stops one that is running and
+clears its record, checking the pid against `ps` first and refusing anything that does not read as a
+sidecar wait, since a pid is recycled the moment it is freed. Both records live in tmp, so nothing new
+appears beside the documents, and the per-document one is a record rather than a lock: two
+per-document waits on one file are still allowed, exactly as they always were.
+
+**`--timeout 0` means no timeout.** It read as the 15-minute default and armed the backstop anyway,
+which is the opposite of what it says. Zero now blocks until something happens; the default with no
+flag is still 900, and an unparseable value still falls back rather than silently becoming forever.
+
+**The timeout exit says in words that the timeout expired.** The line still opens with `still
+watching` and the exit code is still 1, and it now adds that nothing was missed and nothing advanced,
+so an agent reading exit 1 knows it means "run it again".
+
 ## 1.8.0 (2026-08-15)
 
 **A review is a folder now, not a file.** Reviewing a product means reading a brief, a research

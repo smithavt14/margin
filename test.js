@@ -4547,3 +4547,152 @@ test('a document created while wait --dir is armed joins the folder it is watchi
   assert.match(out, /\(1 of 3 documents\)/, 'and the folder is now three');
   fs.rmSync(d, { recursive: true, force: true });
 });
+
+// ---------- the watcher registry: `sidecar watchers` (lib/watchers.js) ----------
+// A `wait` is a long-lived process holding the turn, and half of them used to leave no trace at all.
+// These cover the three things the verb promises: it says what is armed, it can tell a running
+// watcher from a record that outlived its process, and --clean touches only the second kind.
+
+const Watchers = require('./lib/watchers.js');
+
+// A record for a pid nothing is running. 0x7FFFFFF is beyond any live pid on macOS/Linux, the same
+// number the folder-lock tests use for a dead holder.
+const DEAD_PID = 0x7FFFFFF;
+const plantDead = (target, agent = 'ghost') => {
+  const p = Watchers.recordPath('doc', target, agent);
+  fs.writeFileSync(p, JSON.stringify({ pid: DEAD_PID, kind: 'doc', file: target, agent, at: new Date().toISOString() }));
+  return p;
+};
+
+test('the registry reads a live record and a dead one apart, and clean removes only the dead', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sidecar-watchers-'));
+  const liveDoc = path.join(d, 'live.md'), deadDoc = path.join(d, 'dead.md');
+
+  const mine = Watchers.arm(liveDoc, 'claude');       // this process is genuinely alive
+  const theirs = plantDead(deadDoc);
+  const find = (t) => Watchers.list().find(r => r.target === t);
+
+  assert.equal(find(liveDoc).state, 'live', 'a running holder with a fresh beat is live');
+  assert.equal(find(liveDoc).pid, process.pid);
+  assert.equal(find(liveDoc).kind, 'doc');
+  assert.equal(find(deadDoc).state, 'stale', 'a fresh record from a dead process is stale');
+
+  // A running holder that has missed three beats is QUIET, not stale: it may be suspended, and
+  // reaping its record would hide a watcher that is genuinely armed.
+  const old = new Date(Date.now() - Watchers.TTL - 5000);
+  fs.utimesSync(mine, old, old);
+  assert.equal(find(liveDoc).state, 'quiet');
+  Watchers.touch(mine);
+  assert.equal(find(liveDoc).state, 'live', 'a beat revives it');
+
+  const reaped = Watchers.clean();
+  assert.ok(reaped.some(r => r.target === deadDoc), 'the dead record is reaped');
+  assert.ok(!reaped.some(r => r.target === liveDoc), 'and the live one is never touched');
+  assert.ok(!fs.existsSync(theirs));
+  assert.ok(fs.existsSync(mine));
+
+  Watchers.release(mine);
+  assert.ok(!fs.existsSync(mine), 'and our own goes on the way out');
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+test('the folder lock is one of the records the registry lists', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sidecar-watchers-dir-'));
+  const lock = Dir.acquireLock(d, 'claude');
+  const rec = Watchers.list().find(r => r.target === d);
+  assert.equal(rec.kind, 'dir', 'a dir lock reads as a dir watcher');
+  assert.equal(rec.agent, 'claude');
+  assert.equal(rec.state, 'live');
+  Dir.releaseLock(lock.path);
+  assert.equal(Watchers.list().find(r => r.target === d), undefined);
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+test('sidecar watchers lists a real armed wait as LIVE beside a dead record marked STALE', async () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sidecar-watchers-cli-'));
+  const doc = path.join(d, 'armed.md');
+  fs.writeFileSync(doc, '# Armed\n\nThe claim lives here.\n');
+  fs.writeFileSync(doc + '.sidecar.json', JSON.stringify({ schema: 1, items: [] }));
+  const ghostDoc = path.join(d, 'ghost.md');
+  const ghost = plantDead(ghostDoc);
+
+  const w = spawn('node', [path.join(__dirname, 'server.js'), 'wait', doc, '--timeout', '20'],
+    { env: { ...process.env, SIDECAR_PORT: '4990' }, stdio: 'pipe' });
+  try {
+    await new Promise((res) => setTimeout(res, 900));   // let it get past the startup emit and arm
+    const armed = fs.realpathSync(doc);
+
+    const listed = dirCli(['watchers'], d);
+    assert.equal(listed.status, 0, 'listing is never an error, whatever it finds');
+    const live = listed.stdout.split('\n').find(l => l.includes(armed));
+    assert.match(live, /LIVE\s+doc\s+claude\s+pid \d+/, 'the armed wait is live, with its pid');
+    assert.match(listed.stdout, new RegExp(`STALE\\s+doc\\s+ghost.*${ghostDoc.replace(/[.]/g, '\\.')}`),
+      'and the record whose process is gone is marked STALE');
+    assert.match(listed.stdout, /sidecar watchers --clean/, 'which says how to clear it');
+
+    const cleaned = dirCli(['watchers', '--clean'], d);
+    assert.equal(cleaned.status, 0);
+    assert.match(cleaned.stdout, /reaped \d+ stale watcher/);
+    assert.ok(cleaned.stdout.includes(ghostDoc), 'it reports what it reaped by name');
+    assert.ok(!fs.existsSync(ghost), 'the stale record is gone');
+
+    const after = dirCli(['watchers'], d);
+    assert.ok(after.stdout.includes(armed), 'the live watcher survived the clean');
+    assert.ok(!after.stdout.includes(ghostDoc));
+
+    // --kill refuses a pid it holds no record for, rather than signalling on a number alone.
+    const stray = dirCli(['watchers', '--kill', String(DEAD_PID)], d);
+    assert.equal(stray.status, 2);
+    assert.match(stray.stderr, /no watcher record for pid/);
+  } finally {
+    w.kill();
+    await new Promise((res) => w.on('exit', res));
+  }
+  // The wait cleans its own record up on the way out (SIGTERM now runs its exit path).
+  assert.equal(Watchers.list().find(r => r.target === fs.realpathSync(doc)), undefined);
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+test('wait --timeout 0 has no backstop: it blocks past the default and still wakes on a comment', async () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sidecar-notimeout-'));
+  const doc = path.join(d, 'patient.md');
+  fs.writeFileSync(doc, '# Patient\n\nThe claim lives here.\n');
+  fs.writeFileSync(doc + '.sidecar.json', JSON.stringify({ schema: 1, items: [] }));
+
+  // `Number(argv[++i]) || 900` read 0 as absent and armed the 15-minute backstop anyway. Nothing this
+  // test can wait out proves "never", so it proves the flag is taken at all: a 1s wait on the same
+  // document exits 1, and this one is still blocking well after that.
+  const quick = dirCli(['wait', doc, '--timeout', '1'], d);
+  assert.equal(quick.status, 1, 'a 1s timeout expires');
+
+  const w = spawn('node', [path.join(__dirname, 'server.js'), 'wait', doc, '--timeout', '0'],
+    { env: { ...process.env, SIDECAR_PORT: '4990' }, stdio: 'pipe' });
+  let out = '';
+  w.stdout.on('data', (x) => out += x.toString());
+  // Never let this hang the suite: whatever happens, the child dies at 15s.
+  const guard = setTimeout(() => w.kill('SIGKILL'), 15000);
+  try {
+    await new Promise((res) => setTimeout(res, 2500));
+    assert.equal(w.exitCode, null, 'still blocking with no timeout to expire');
+    assert.equal(out, '', 'and it has said nothing');
+
+    asAlex(['comment', 'patient.md', '--quote', 'The claim lives here.', '--text', 'NO-BACKSTOP'], d);
+    const code = await new Promise((res) => w.on('exit', res));
+    assert.equal(code, 0, 'it still wakes on a real event and exits 0');
+    assert.match(out, /NO-BACKSTOP/);
+  } finally { clearTimeout(guard); w.kill(); }
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+test('the timeout exit says it is a timeout rather than a failure', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sidecar-timeoutmsg-'));
+  const doc = path.join(d, 'quiet.md');
+  fs.writeFileSync(doc, '# Quiet\n');
+  fs.writeFileSync(doc + '.sidecar.json', JSON.stringify({ schema: 1, items: [] }));
+  const r = dirCli(['wait', doc, '--timeout', '1'], d);
+  assert.equal(r.status, 1, 'exit 1 is the contract and does not move');
+  assert.match(r.stdout, /still watching/, 'the phrase agents match on stays');
+  assert.match(r.stdout, /The timeout expired, nothing was missed and nothing advanced/);
+  assert.match(r.stdout, /DONE: false/);
+  fs.rmSync(d, { recursive: true, force: true });
+});

@@ -5,7 +5,7 @@ For *driving* sidecar as an agent (reviewing a document with a human), see
 
 ## Shape
 
-No build step. Nineteen files carry the whole tool:
+No build step. Twenty files carry the whole tool:
 
 | File | What it is |
 |---|---|
@@ -17,6 +17,7 @@ No build step. Nineteen files carry the whole tool:
 | `lib/wait.js` | `sidecar wait` — the fs-watching reactive-loop primitive. Server-independent by design. |
 | `lib/digest.js` | The persistent per-agent cursor, the doc baseline beside it, and the one digest renderer both `wait` and `digest` print. |
 | `lib/dir.js` | The folder under `--dir`: which documents it holds, several digests read as one, the one-watcher lock. |
+| `lib/watchers.js` | The watcher registry in tmp: who is armed on what, whether the pid is still running, and what `watchers --clean` may reap. |
 | `lib/presence.js` | The presence ping. Decorative and server-optional: a failed POST never affects the command that made it. |
 | `public/index.html` | The entire frontend: rendering, contenteditable editor, directory panel, review rail. |
 | `public/navsort.js` | The directory panel's ordering. Pure list in/out; no DOM, no dependency. |
@@ -217,9 +218,32 @@ event and the first real change to it is.
 every cursor in the folder, so whichever advances one first decides what the other believes it has already
 seen. A held lock is a live pid AND a heartbeat inside 60s, since a pid can be recycled and an mtime alone
 cannot tell a killed watcher from a busy one. `--force` takes over. A per-document `wait` inside the folder
-coexists with a folder wait rather than being refused: it writes no lock and has to keep behaving exactly
+coexists with a folder wait rather than being refused: it takes no lock and has to keep behaving exactly
 as it does, and the cost of the overlap is one doubled digest on one document, which self-heals because
 both processes read and advance the same cursor file.
+
+## What is armed, and is it still running
+
+`sidecar watchers` lists every `wait` on the machine: which document or folder, which agent, the pid, how
+long it has been blocking, and whether that pid is alive. `--clean` reaps the records whose process is
+gone, `--kill <pid>` stops a live one, and both take no document, because the question is about the
+machine rather than about one review.
+
+**Both kinds of wait leave a record in tmp now** (`lib/watchers.js`), and only one of them is a lock. The
+folder lock refuses a rival, for the reason above. The per-document record refuses nothing at all: two
+per-document waits on one file have always been allowed, and making one refuse would change behaviour
+reviews already depend on. It exists so the verb can answer the question, and for nothing else. Before it,
+a backgrounded `wait` whose harness died was invisible: the browser stopped reading *claude is here* and
+there was no way to ask what was still armed.
+
+Three states, because only one of them is safe to reap. **live** is running and beating. **quiet** is
+running and has missed three beats, which is a suspended or wedged process that will carry on, so `--clean`
+leaves it alone. **stale** is a record that outlived its process, and that is all `--clean` removes.
+
+`--kill` needs two things to agree before it signals: a record naming the pid, and `ps` showing a command
+line that is still a sidecar wait. A pid is recycled the moment it is freed, so the record on its own says
+nothing about what is wearing that number now. When `ps` cannot answer, it refuses and points at `--clean`
+plus the lock's own 60-second TTL.
 
 Presence covers every document in the folder while a folder wait is armed, by pinging each one (the server
 keys presence per document and needs no change for this). The woken document's ping carries the thread ids,

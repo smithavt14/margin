@@ -171,6 +171,7 @@ JSON
 
 ```bash
 sidecar wait doc.md --timeout 900  # block until they act, then print the digest since your last look
+sidecar wait doc.md --timeout 0    # …with no backstop at all: it returns when they act, and not before
 sidecar digest doc.md              # the delta since your last look — re-check mid-turn without a full show
 sidecar digest doc.md --peek       # …without advancing the cursor
 sidecar show doc.md                # the COMPLETE current state — items, statuses, threads, diff, done
@@ -422,8 +423,9 @@ The contract is the single-document one, read a folder at a time:
 - `DONE: true` only when **every** document in the folder is done. Until then the tail names how many
   are, so you can watch a review close without opening anything.
 - **One folder watcher per folder per agent.** A second one refuses and names the holder's pid;
-  `--force` takes over a wedged one. Two would share every cursor in the folder, so whichever
-  advanced one first would decide what the other believed it had seen.
+  `--force` takes over a wedged one, and `sidecar watchers` says whether that pid is still running.
+  Two would share every cursor in the folder, so whichever advanced one first would decide what the
+  other believed it had seen.
 - **The per-document cursors are unchanged.** `--dir` aggregates and stores nothing of its own: still
   one `<doc>.sidecar.seen.json` per document, keyed by your agent name, advanced exactly as running
   `sidecar digest` on each would. So you can swap between a folder wait and a per-document wait
@@ -472,8 +474,32 @@ sidecar wait /abs/path/to/doc.md --timeout 60
 
 - Exit **0** — they acted; the digest is on stdout. Respond to it.
 - Exit **1** — the timeout. It prints `still watching`, advances nothing, and means *run it again*.
+  The line says so itself: the timeout expired, nothing was missed, and the cursor sat still, so
+  re-arming picks up exactly where it left off.
 
 Never leave the 15-minute default blocking a foreground turn.
+
+**`--timeout 0` removes the backstop**: the wait returns when they act and not before. Use it only for a
+watcher your harness runs in the background and can kill; in the foreground it blocks the turn forever.
+The default with no flag is still 900.
+
+### What is still armed
+
+```bash
+sidecar watchers                  # every wait on this machine: document or folder, agent, pid, how long
+sidecar watchers --clean          # remove the records of the ones whose process is gone
+sidecar watchers --kill <pid>     # stop one that is running, and clear its record
+```
+
+Three states, and only one is yours to clear. **LIVE** is armed and beating. **QUIET** is running and has
+missed three heartbeats, which is suspended or wedged, and `--clean` leaves it alone. **STALE** is a record
+that outlived its process, usually a backgrounded wait that died with its harness, and that is all
+`--clean` removes. A live watcher is never touched.
+
+Reach for it when a `wait --dir` refuses with `already watching` and you believe the holder is gone, or when
+you have lost track of what you left armed across a long session. `--kill` checks the pid against `ps`
+before signalling and refuses anything that does not read as a sidecar wait, since a pid is recycled the
+moment it is freed.
 
 **Re-arm after every response.** One `wait` covers one turn: respond to the digest, then wait again.
 You stop only when the digest says `DONE: true` or the human says they're finished. A review where
