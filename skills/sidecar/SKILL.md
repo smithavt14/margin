@@ -57,7 +57,7 @@ only shortens the commands.
 `sidecar help` lists every verb, and `sidecar skill` prints this file from inside the installed
 package — reach for that one when the installed version might be older than what you are reading.
 `sidecar doctor` asks the registry whether the install is current and prints the upgrade command when
-it is behind; an `npx` copy that is behind moves with `npx -y @spktr/sidecar@latest`.
+it is behind. An `npx` run re-resolves `latest` on its own when it is online.
 
 ```bash
 sidecar doctor                # is a server running, on what code, and what URLs to hand over

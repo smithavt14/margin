@@ -5,9 +5,9 @@ version was tagged.
 
 ## 1.10.0 (2026-09-07)
 
-**`doctor` says whether the install is current.** Nothing in the package updates itself and neither
-install path does: a global install stays on the version it was, and `npx` reuses its cache. So
-`doctor` now asks the registry for `latest`, alongside the server probe it already runs, and prints
+**`doctor` says whether the install is current.** Nothing in the package updates itself, and a
+global install stays on the version it was (`npx` re-resolves `latest` when it is online, so an npx
+user is already current). So `doctor` now asks the registry for `latest`, alongside the server probe it already runs, and prints
 one line: current, or the newer version with the one command that installs it. Offline it says the
 registry was unreachable and gives no verdict, and the check gives up after two seconds so `doctor`
 is as quick as it was. `SIDECAR_REGISTRY=off` skips it. The skill's setup step installs
