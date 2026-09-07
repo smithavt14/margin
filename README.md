@@ -45,9 +45,10 @@ sidecar"*, and it fetches the tool, starts the server, and opens the review at
 To run the server yourself instead:
 
 ```bash
-npm i -g @spktr/sidecar          # or prefix everything with npx @spktr/sidecar
+npm i -g @spktr/sidecar@latest   # or prefix everything with npx @spktr/sidecar
 sidecar ~/path/to/your/docs      # a single file or a whole directory
 sidecar help                     # every command
+sidecar doctor                   # is a server running, and is this install the latest version
 sidecar skill                    # the agent protocol, on stdout, no install
 ```
 

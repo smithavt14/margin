@@ -1,6 +1,6 @@
 {
   "name": "@spktr/sidecar",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "Review documents with your AI agent, locally: comments, suggestion cards with word-level diffs, and rich-text editing on your own files.",
   "keywords": [
     "markdown",

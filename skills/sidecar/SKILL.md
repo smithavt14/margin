@@ -42,10 +42,11 @@ for three paragraphs.
 was their last terminal step; assume they do not have a terminal open and would not know what to do
 with one. Everything below you run yourself.
 
-Put `sidecar` on PATH:
+Put `sidecar` on PATH, and bring an older copy forward at the same time; nothing in the package
+updates itself, so a global install stays on the version it was:
 
 ```bash
-npm i -g @spktr/sidecar
+npm i -g @spktr/sidecar@latest
 ```
 
 If that fails — a permissioned or sandboxed npm prefix is the usual reason — **do not report it and
@@ -55,6 +56,8 @@ only shortens the commands.
 
 `sidecar help` lists every verb, and `sidecar skill` prints this file from inside the installed
 package — reach for that one when the installed version might be older than what you are reading.
+`sidecar doctor` asks the registry whether the install is current and prints the upgrade command when
+it is behind; an `npx` copy that is behind moves with `npx -y @spktr/sidecar@latest`.
 
 ```bash
 sidecar doctor                # is a server running, on what code, and what URLs to hand over

@@ -1808,8 +1808,63 @@ test('add happy paths unchanged: replyTo, flag, and kind inference all pass thro
 
 // SIDECAR_PORT points at a dead port so doctor takes its no-server path and never reaches whatever the
 // developer happens to be running on the default one.
+// SIDECAR_REGISTRY=off keeps these tests off the network; the registry check has its own tests below.
 const doctorIn = (d, ...args) => execFileSync('node', [BIN, 'doctor', ...args],
-  { cwd: d, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, SIDECAR_PORT: '4990' } });
+  { cwd: d, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, SIDECAR_PORT: '4990', SIDECAR_REGISTRY: 'off' } });
+
+/* ---------------------------------------------------------------------------
+   doctor asks the registry whether this install is current. Nothing in the package
+   updates itself, so this line is where a stale global install or npx cache finds out.
+   A local http server stands in for registry.npmjs.org.
+--------------------------------------------------------------------------- */
+const LOCAL_VERSION = require('./package.json').version;
+const bump = (v) => { const p = v.split('.').map(Number); p[1] += 1; return p.join('.'); };
+async function withRegistry(reply, fn) {
+  const srv = http.createServer((req, res) => {
+    if (typeof reply === 'number') { res.writeHead(reply); return res.end(); }
+    res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(reply));
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${srv.address().port}`;
+  try { return await fn(url); } finally { srv.close(); }
+}
+// Async, because the fake registry lives in this process and a sync exec would starve it.
+const doctorWithRegistry = (d, url) => new Promise((resolve, reject) => {
+  const child = spawn('node', [BIN, 'doctor'],
+    { cwd: d, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, SIDECAR_PORT: '4990', SIDECAR_REGISTRY: url } });
+  let out = ''; child.stdout.on('data', (b) => { out += b; });
+  child.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(`doctor exited ${code}\n${out}`))));
+});
+
+test('doctor says a newer version is on the registry, and the one command that installs it', async () => {
+  const d = cliDirNoGit();
+  const out = await withRegistry({ version: bump(LOCAL_VERSION) }, (url) => doctorWithRegistry(d, url));
+  assert.match(out, new RegExp(`registry:\\s+v${bump(LOCAL_VERSION).replace(/\./g, '\\.')} available`));
+  assert.match(out, /npm i -g @spktr\/sidecar@latest/, 'names the upgrade command');
+  assert.match(out, /this cli:\s+v/, 'the local version line is still printed first');
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+test('doctor says current when the registry matches, and never suggests an upgrade', async () => {
+  const d = cliDirNoGit();
+  const out = await withRegistry({ version: LOCAL_VERSION }, (url) => doctorWithRegistry(d, url));
+  assert.match(out, /registry:\s+v\S+\s+✓ current/);
+  assert.doesNotMatch(out, /@latest/);
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+test('doctor says the registry is unreachable rather than guessing, and still finishes', async () => {
+  const d = cliDirNoGit();
+  const dead = await withRegistry({}, (url) => url);          // the port is closed once withRegistry returns
+  const out = await doctorWithRegistry(d, dead);
+  assert.match(out, /registry:\s+unreachable/);
+  assert.doesNotMatch(out, /@latest/, 'no verdict, no upgrade nag');
+  assert.match(out, /server:\s+NOT RUNNING/, 'the rest of doctor still ran');
+  const off = doctorIn(d);
+  assert.match(off, /registry:\s+check skipped/);
+  fs.rmSync(d, { recursive: true, force: true });
+});
 
 test('doctor warns when the digest state files are not gitignored, and goes quiet once they are', () => {
   const d = cliDir();   // a git repo with no .gitignore, which is the state a host repo starts in
