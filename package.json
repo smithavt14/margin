@@ -34,7 +34,7 @@
     "CHANGELOG.md"
   ],
   "bin": {
-    "sidecar": "./server.js"
+    "sidecar": "server.js"
   },
   "scripts": {
     "prepack": "node scripts/prepack-guard.js",
