@@ -3,7 +3,7 @@
 All notable changes to sidecar. Versions follow [semver](https://semver.org); dates are the day the
 version was tagged.
 
-## Unreleased
+## 1.9.0 (2026-09-07)
 
 **`sidecar watchers` says what is armed and whether it is still running.** A `wait` is a long-lived
 process holding the turn, and until now half of them left no trace: a folder wait wrote a lock, and a
@@ -25,6 +25,43 @@ flag is still 900, and an unparseable value still falls back rather than silentl
 **The timeout exit says in words that the timeout expired.** The line still opens with `still
 watching` and the exit code is still 1, and it now adds that nothing was missed and nothing advanced,
 so an agent reading exit 1 knows it means "run it again".
+
+**A wide design gets the whole column, and a zoom.** A 1600px artboard reviewed inside the 908px
+prose measure rendered at half size, which is a different design: the type was unreadable and the
+spacing a guess. An `.html` asset now fills the column the two panels leave, with the gutter narrowed
+to 24px because the frame draws its own edge, while prose keeps its 908px measure untouched. The
+header carries the asset's zoom, remembered per browser: **fit** scales the canvas into the column and
+stays the default, **100%** renders it at natural size with the frame's own wrapper scrolling sideways
+so the page never does. Anchoring is the same at both zooms, since a click is hit-tested inside the
+frame in its own untransformed space and only the outline drawn over it is scaled.
+
+**Inside an asset, Shift follows a link.** A plain click in a poster or wireframe stays a comment,
+because a nav bar is as often a thing to comment on as a thing to click through, and the two clicks
+looked identical while one of them silently navigated. Shift is now the click that follows, and it
+says so the whole time it is held: the pointer returns on links, the underline is forced over a
+wireframe's own `text-decoration: none`, and the pick outline drops. The header names the destination
+before you click, so the affordance and the action cannot disagree. A fragment link scrolls the page
+to where the frame says its target sits.
+
+**The window is one frame, and the header owns only the document.** The review rail runs the full
+height of the window as the frame's right column, its tabs sitting in the same 52px brand row the
+folder panel uses, and the header spans only the band between the two panels. What the header used
+to carry has moved to where it belongs: *saved* goes silent at the steady state (editing, saving,
+conflict, and save failed still speak), *all clear* and the open count are gone because the rail's
+active tab already wears the number, the docs link sits at the foot of the folder panel with the rest
+of the application chrome, and presence sits in the centre of the document column where it reads
+ambiently.
+
+**Also:**
+
+- A responsive `.html` asset was measured at the iframe's default 300px viewport before its first
+  layout, so it rendered permanently narrow. It is laid out at column width before the first measure.
+- Below 780px the asset's kind tag drops its *read-only* qualifier so the zoom control and the
+  filename fit on one line.
+- The agent skill spells the panel's tabs the way the panel does (*inbox*, *files*).
+
+**Upgrading:** re-arm any `sidecar wait` armed before the upgrade, same as every release. Nothing on
+disk changes format; the new watcher records live in tmp.
 
 ## 1.8.0 (2026-08-15)
 

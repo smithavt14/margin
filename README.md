@@ -128,6 +128,15 @@ thing you actually wanted to say. `A --> B` is an edge, `-->|label|` labels it, 
 leading `LR` turns it sideways. The source stays plain text in your file, so it still reads in a
 `git diff`. Raw HTML renders too (inline styles only), and relative image paths like `![](./wireframe.svg)` resolve against the document.
 
+**Review a poster or a wireframe.** Open an `.html` file and it renders as designed inside a sandboxed
+frame, none of its own scripts running. Hover outlines the element under the cursor, a click opens a
+comment pinned to that element, and Option steps down through the layers under the pointer when the
+thing you want is behind a scrim. A wide design fills the column, with a zoom in the header: *fit*
+scales it to the column and *100%* shows it at natural size, scrolling sideways inside its own frame.
+A plain click is always a comment; hold Shift to follow a link instead, and the header names the
+destination while you hold it. Your agent reaches the same elements from the terminal with
+`comment --element`.
+
 **Save.** Edits autosave to the real file (debounced), preserving the exact bytes of every block you didn't
 touch.
 
